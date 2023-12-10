@@ -1,0 +1,1 @@
+https://www.smarthome-tricks.de/software-iobroker/1-2-grafana-installation-von-influxdb-und-integration-in-iobroker/

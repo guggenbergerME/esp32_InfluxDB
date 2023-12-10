@@ -1,15 +1,39 @@
 #include <Arduino.h>
 #include <ArduinoOTA.h>
 #include "WiFi.h"
+  #include <InfluxDbClient.h>
+  #include <InfluxDbCloud.h>
 
 /////////////////////////////////////////////////////////////////////////// Schleifen verwalten
-unsigned long previousMillis_mqttCHECK = 0; // Windstärke prüfen
-unsigned long interval_mqttCHECK = 500; 
+unsigned long previousMillis_ota = 0; // OTA aufrufen
+unsigned long interval_ota = 500; 
+
+unsigned long previousMillis_fluxdb = 0; // Fluxdb schreiben
+unsigned long interval_fluxdb = 2500; 
+
+/////////////////////////////////////////////////////////////////////////// InfluxDB Setup
+  #define INFLUXDB_URL "http://192.168.1.129:8086"
+  #define INFLUXDB_TOKEN "KnjcF3qrD45EK3oFvI8OtCrSZ-vTckyASGBH62IArxGfOMBtaS4EEdD51zbhmOm-6l7tnQRI46prTwDdMFS76g=="
+  #define INFLUXDB_ORG "1a413d9db39d66ff"
+  #define INFLUXDB_BUCKET "growatt"
+
+  // Time zone info
+  #define TZ_INFO "UTC1"
+
+
+//////////////////////////////////////////////////////////////////////////  Influxdb2
+  // Declare InfluxDB client instance with preconfigured InfluxCloud certificate
+  InfluxDBClient client(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN, InfluxDbCloud2CACert);
+
+  // Declare Data point
+  Point esp32_wifi("ESP32-555");
+  Point wechselrichter("Growatt_Wechselrichter_L1");
 
 /////////////////////////////////////////////////////////////////////////// Funktionsprototypen
 void loop                       ();
 void wifi_setup                 ();
 void OTA_update                 ();
+void fluxdb_schreiben           ();
 
 /////////////////////////////////////////////////////////////////////////// SETUP - OTA Update
 void OTA_update(){
@@ -50,7 +74,7 @@ const char* WIFI_SSID = "GuggenbergerLinux";
 const char* WIFI_PASS = "Isabelle2014samira";
 
 // Static IP
-IPAddress local_IP(192, 168, 55, 41);
+IPAddress local_IP(192, 168, 55, 42);
 IPAddress gateway(192, 168, 1, 1);
 IPAddress subnet(255, 0, 0, 0);  
 IPAddress dns(192, 168, 1, 1); 
@@ -90,14 +114,35 @@ while (WiFi.status() != WL_CONNECTED) {
     Serial.println("IP Adresse: ");
     Serial.println(WiFi.localIP());
 
-}
 
+    // Accurate time is necessary for certificate validation and writing in batches
+    // We use the NTP servers in your area as provided by: https://www.pool.ntp.org/zone/
+    // Syncing progress and the time will be printed to Serial.
+    timeSync(TZ_INFO, "pool.ntp.org");
+
+
+    // InfluxDB
+
+    // Add tags to the data point
+    esp32_wifi.addTag("SSID", WIFI_SSID);
+
+
+        // Check server connection
+    if (client.validateConnection()) {
+      Serial.print("Connected to InfluxDB: ");
+      Serial.println(client.getServerUrl());
+    } else {
+      Serial.print("InfluxDB connection failed: ");
+      Serial.println(client.getLastErrorMessage());
+    }    
+
+}
 
 /////////////////////////////////////////////////////////////////////////// SETUP
 void setup() {
 
 // Serielle Kommunikation starten
-Serial.begin(38400);
+Serial.begin(115200);
 
 // Wifi setup
 wifi_setup();
@@ -107,14 +152,48 @@ OTA_update();
 
 }
 
+/////////////////////////////////////////////////////////////////////////// Fluxdb schreiben
+void fluxdb_schreiben() {
+
+   // Löschen die Felder, um den Punkt wiederzuverwenden. Die Tags bleiben die gleichen.
+    wechselrichter.clearFields();
+    esp32_wifi.clearFields();
+  
+    // Store measured value into point
+    // Report RSSI of currently connected network
+  float h = 89.4;
+  float t = 25.8;
+
+  wechselrichter.addField("humidity", h);
+  wechselrichter.addField("temperature", t);
+  
+    // Schreibe Protokol seriell
+    Serial.print("Schreibe fluxdb -> ");
+    Serial.println(wechselrichter.toLineProtocol());
+  
+    // Punkte schreiben und bei Fehler ERROR ausgaben
+    if (!client.writePoint(wechselrichter)) {
+      Serial.print("ERROR!!! -------------- > InfluxDB write failed: ");
+      Serial.println(client.getLastErrorMessage());
+    }
+  
+}
 
 /////////////////////////////////////////////////////////////////////////// LOOP
 void loop() {
 
-// OTA aufrufen
-ArduinoOTA.handle();  
+  //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ OTA aufrufen
+  if (millis() - previousMillis_ota > interval_ota) {
+      previousMillis_ota = millis(); 
+      // OTA aufrufen
+      ArduinoOTA.handle();  
+    }   
 
-delay(200);
+  //++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ Fluxdb aufrufen
+  if (millis() - previousMillis_fluxdb > interval_fluxdb) {
+      previousMillis_fluxdb = millis(); 
+      fluxdb_schreiben();
+    }     
 
 
-}
+    }

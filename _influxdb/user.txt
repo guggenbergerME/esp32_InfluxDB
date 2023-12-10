@@ -1,0 +1,4 @@
+CREATE USER "admin" WITH PASSWORD 'asd963yxc' WITH ALL PRIVILEGES
+CREATE USER "user_test" WITH PASSWORD 'qwer'
+CREATE DATABASE "test"
+GRANT ALL ON "test" TO "user_test"
