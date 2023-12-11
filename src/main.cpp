@@ -166,6 +166,7 @@ void fluxdb_schreiben() {
 
   wechselrichter.addField("humidity", h);
   wechselrichter.addField("temperature", t);
+  wechselrichter.addField("Millis", millis());
   
     // Schreibe Protokol seriell
     Serial.print("Schreibe fluxdb -> ");
